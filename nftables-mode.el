@@ -1,3 +1,28 @@
+;;; nftables-mode.el --- Major mode for editing nftables  -*- lexical-binding: t -*-
+
+;; Copyright (C) 2021  Free Software Foundation, Inc
+
+;; Author: trentbuck@gmail.com (Trent W. Buck)
+;; Maintainer: emacs-devel@gnu.org
+;; Version: 1.0
+;; Package-Requires: ((emacs "25.1"))
+;; Keywords: convenience
+
+;; This package is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation; either version 3, or (at your option)
+;; any later version.
+
+;; This package is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
 (require 'rx)
 (require 'syntax)                       ; syntax-ppss, for indentation
 
@@ -41,9 +66,9 @@
 ;;;            add table inet foo
 ;;;            add chain inet foo bar { type filter hook input priority filter; policy drop }
 ;;;            add rule  inet foo bar predicate [counter] [log] <accept|drop|reject>
+
 (defvar nftables-font-lock-keywords
-  `(
-    ;; include "foo"
+  `(;; include "foo"
     ;; list ruleset
     ;; flush ruleset
     (,(rx bol
@@ -63,7 +88,7 @@
     (,(rx bol
           (group (or "define" "redefine" "undefine"))
           " "
-          (group (one-or-more (any alnum ?_ ?.)))
+          (group (one-or-more (any alnum ?_)))
           eow)
      (1 font-lock-type-face)
      (2 font-lock-variable-name-face))
@@ -115,10 +140,7 @@
      (3 font-lock-variable-name-face)
      (4 font-lock-variable-name-face))
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ;; REMAINING RULES NOT ANCHORED AT BEGINNING-OF-LINE
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ;; Remaining rules not anchored at beginning-of-line.
 
     ;; << chain specification >>
     ;; { type filter hook input priority filter; }
@@ -228,7 +250,7 @@
     ;; @array
     (,(rx (or "@" "$")
           alpha
-          (zero-or-more (any alnum ?_ ?.)))
+          (zero-or-more (any alnum ?_)))
      . font-lock-variable-name-face)
 
     ;; Simplified because scanner.l is INSANE for IPv6.
@@ -268,18 +290,14 @@
           " "
           (group (one-or-more (any alnum ?_)))) ; chain_expr
      (1 font-lock-function-name-face)
-     (2 font-lock-variable-name-face))
-
-
-    ))
-
+     (2 font-lock-variable-name-face))))
 
 ;;; Based on equivalent for other editors:
 ;;;   * /usr/share/nano/nftables.nanorc
 ;;;   * https://github.com/nfnty/vim-nftables
 ;;;###autoload
 (define-derived-mode nftables-mode prog-mode "nft"
-  "FIXME docstring"
+  "Major mode to edit nftables files."
   (setq-local comment-start "#")
   (setq-local font-lock-defaults
               `(nftables-font-lock-keywords nil nil))
@@ -295,15 +313,20 @@
     (save-excursion
       (back-to-indentation)
       (let ((depth (car (syntax-ppss))))
-        (if (= ?\) (char-syntax (char-after)))
-            (setq depth (1- depth)))
+        (when (= ?\) (char-syntax (char-after)))
+          (setq depth (1- depth)))
         (indent-line-to (* depth tab-width)))
       (setq old-point (point)))
     (when (< (point) old-point)
       (back-to-indentation))))
 
+;;;###autoload
 (add-to-list 'auto-mode-alist '("\\.nft\\(?:ables\\)?\\'" . nftables-mode))
+;;;###autoload
 (add-to-list 'auto-mode-alist '("/etc/nftables.conf" . nftables-mode))
+;;;###autoload
 (add-to-list 'interpreter-mode-alist '("nft\\(?:ables\\)?" . nftables-mode))
 
 (provide 'nftables-mode)
+
+;;; nftables-mode.el enads here.
