@@ -1,10 +1,10 @@
 ;;; nftables-mode.el --- Major mode for editing nftables  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2021  Free Software Foundation, Inc
+;; Copyright (C) 2021-2022  Free Software Foundation, Inc
 
 ;; Author: trentbuck@gmail.com (Trent W. Buck)
 ;; Maintainer: emacs-devel@gnu.org
-;; Version: 1.0
+;; Version: 1.1
 ;; Package-Requires: ((emacs "25.1"))
 ;; Keywords: convenience
 
@@ -23,8 +23,14 @@
 
 ;;; Commentary:
 
+;; This major mode currently only offers basic highlighting and
+;; primitive indentation.  Contributions very welcome.
+
+;;; Code:
+
 (require 'rx)
 (require 'syntax)                       ; syntax-ppss, for indentation
+(require 'smie)
 
 (defvar nftables-mode-map (make-sparse-keymap))
 (defvar nftables-mode-hook nil)
@@ -32,40 +38,43 @@
   (let ((table (make-syntax-table)))
     (modify-syntax-entry ?# "<\n" table)  ; make #comment work
     (modify-syntax-entry ?\n ">#" table)  ; make #comment work
-    (modify-syntax-entry ?_ "w" table)    ; foo_bar is 1 word (not 2)
+    ;; "foo_bar" should always be 2 words (it's a user-notion,
+    ;; controllable via `super/subword-mode', not one that should
+    ;; depend on the major mode).
+    ;; (modify-syntax-entry ?_ "w" table) ; foo_bar is 1 word (not 2)
     table))
 
-;;; NOTE: I started with the keywords in the nano highlighter, but
-;;; they were really incomplete.  So instead I looked at the
-;;; flex/bison rules in the nft source code (as at debian/0.9.1-2-2-g3255aaa):
-;;;     https://salsa.debian.org/pkg-netfilter-team/pkg-nftables/blob/master/src/scanner.l
-;;;     https://salsa.debian.org/pkg-netfilter-team/pkg-nftables/blob/master/src/parser_bison.y
-;;; NOTE: not supporting multi-statement lines "list ruleset; flush ruleset".
-;;; NOTE: not supporting multi-line statements "list \\\n ruleset".
-;;; NOTE: not supporting arbitrary whitespace in some places.
-;;; NOTE: identifiers are hard (e.g. bare addresses, names, quoted strings), so
-;;;       not supporting all those properly.
-;;; NOTE: family can be omitted; it defaults to "ip" (IPv4 only).
-;;;       I am not supporting that, because you USUALLY want "inet" (IPv4/IPv6 dual-stack).
-;;; NOTE: there are two main styles, I'm supporting only those and not a mix of same.
-;;;
-;;;       Style #1:
-;;;
-;;;            flush ruleset
-;;;            table inet foo {
-;;;                chain bar {
-;;;                    type filter hook input priority filter
-;;;                    policy drop
-;;;                    predicate [counter] [log] <accept|drop|reject>
-;;;                }
-;;;            }
-;;;
-;;;       Style #2 (everything at the "top level"):
-;;;
-;;;            flush ruleset
-;;;            add table inet foo
-;;;            add chain inet foo bar { type filter hook input priority filter; policy drop }
-;;;            add rule  inet foo bar predicate [counter] [log] <accept|drop|reject>
+;; NOTE: I started with the keywords in the nano highlighter, but
+;; they were really incomplete.  So instead I looked at the
+;; flex/bison rules in the nft source code (as at debian/0.9.1-2-2-g3255aaa):
+;;     https://salsa.debian.org/pkg-netfilter-team/pkg-nftables/blob/master/src/scanner.l
+;;     https://salsa.debian.org/pkg-netfilter-team/pkg-nftables/blob/master/src/parser_bison.y
+;; NOTE: not supporting multi-statement lines "list ruleset; flush ruleset".
+;; NOTE: not supporting multi-line statements "list \\\n ruleset".
+;; NOTE: not supporting arbitrary whitespace in some places.
+;; NOTE: identifiers are hard (e.g. bare addresses, names, quoted strings), so
+;;       not supporting all those properly.
+;; NOTE: family can be omitted; it defaults to "ip" (IPv4 only).
+;;       I am not supporting that, because you USUALLY want "inet" (IPv4/IPv6 dual-stack).
+;; NOTE: there are two main styles, I'm supporting only those and not a mix of same.
+;;
+;;       Style #1:
+;;
+;;            flush ruleset
+;;            table inet foo {
+;;                chain bar {
+;;                    type filter hook input priority filter
+;;                    policy drop
+;;                    predicate [counter] [log] <accept|drop|reject>
+;;                }
+;;            }
+;;
+;;       Style #2 (everything at the "top level"):
+;;
+;;            flush ruleset
+;;            add table inet foo
+;;            add chain inet foo bar { type filter hook input priority filter; policy drop }
+;;            add rule  inet foo bar predicate [counter] [log] <accept|drop|reject>
 
 (defvar nftables-font-lock-keywords
   `(;; include "foo"
@@ -78,7 +87,7 @@
               "list tables"
               "list counters"
               "list quotas")
-          eow)
+          symbol-end)
      . font-lock-preprocessor-face)
 
     ;; define foo = bar
@@ -89,7 +98,7 @@
           (group (or "define" "redefine" "undefine"))
           " "
           (group (one-or-more (any alnum ?_)))
-          eow)
+          symbol-end)
      (1 font-lock-type-face)
      (2 font-lock-variable-name-face))
 
@@ -103,7 +112,7 @@
           (group (or "ip" "ip6" "inet" "arp" "bridge" "netdev"))
           " "
           (group (one-or-more (any alnum ?_)))
-          eow)
+          symbol-end)
      (1 font-lock-type-face)
      (2 font-lock-constant-face)
      (3 font-lock-variable-name-face))
@@ -134,7 +143,7 @@
           (group (one-or-more (any alnum ?_)))
           " "
           (group (one-or-more (any alnum ?_)))
-          eow)
+          symbol-end)
      (1 font-lock-type-face)
      (2 font-lock-constant-face)
      (3 font-lock-variable-name-face)
@@ -144,7 +153,7 @@
 
     ;; << chain specification >>
     ;; { type filter hook input priority filter; }
-    (,(rx bow
+    (,(rx symbol-start
           (group "type")
           " "
           (group (or "filter" "nat" "route"))
@@ -172,7 +181,7 @@
                      "filter"
                      "out"
                      "srcnat"))
-          eow)
+          symbol-end)
      (1 font-lock-type-face)
      (3 font-lock-type-face)
      (5 font-lock-type-face)
@@ -189,17 +198,17 @@
     ;; elements = { ... }  # set/map
     ;; size 1000           # set/map
     ;; auto-merge          # set
-    (,(rx bow
+    (,(rx symbol-start
           (group "type")
           " "
           (group (or "ipv4_addr" "ipv6_addr" "ether_addr" "inet_proto" "inet_service" "mark"))
           (optional
            " : "
            (group (or "ipv4_addr" "ipv6_addr" "ether_addr" "inet_proto" "inet_service" "mark" "counter" "quota")))
-          eow)
+          symbol-end)
      (1 font-lock-type-face)
      (2 font-lock-constant-face))
-    (,(rx bow
+    (,(rx symbol-start
           (group "flags")
           " "
           (group
@@ -207,10 +216,10 @@
            (zero-or-more
             ", "
             (or "constant" "dynamic" "interval" "timeout")))
-          eow)
+          symbol-end)
      (1 font-lock-type-face)
      (2 font-lock-constant-face))
-    (,(rx bow
+    (,(rx symbol-start
           (group (or "timeout" "gc-interval"))
           " "
           (group                        ; copied from scanner.l
@@ -219,24 +228,24 @@
            (optional (one-or-more digit) "m")
            (optional (one-or-more digit) "s")
            (optional (one-or-more digit) "ms"))
-          eow)
+          symbol-end)
      (1 font-lock-type-face)
      (2 font-lock-string-face))
-    (,(rx bow
+    (,(rx symbol-start
           (group "size")
           " "
           (group (one-or-more digit))
-          eow)
+          symbol-end)
      (1 font-lock-type-face)
      (2 font-lock-string-face))
-    (,(rx bow
+    (,(rx symbol-start
           "auto-merge"
-          eow)
+          symbol-end)
      . font-lock-type-face)
-    (,(rx bow
+    (,(rx symbol-start
           (group "elements")
           " = "
-          eow)
+          symbol-end)
      (1 font-lock-type-face))
 
 
@@ -257,7 +266,7 @@
     ;; 1234  (e.g. port number)
     ;; 1.2.3.4
     ;; ::1
-    (,(rx bow
+    (,(rx symbol-start
           (or
            ;; IPv4 address (optional CIDR)
            (and digit
@@ -275,26 +284,27 @@
            ;; Has to be after IPv4 address, or IPv4 address loses.
            ;; (or (one-or-more digit))
            )
-          eow)
+          symbol-end)
      . font-lock-string-face)
 
 
     ;; parser_bison.y:family_spec_explicit
-    ;; (,(rx bow (or "ip" "ip6" "inet" "arp" "bridge" "netdev") eow)
+    ;; (,(rx symbol-start (or "ip" "ip6" "inet" "arp" "bridge" "netdev")
+    ;;       symbol-end)
     ;;  . font-lock-constant-face)
 
     ;; parser_bison.y:verdict_expr
-    (,(rx bow (or "accept" "drop" "continue" "return") eow)
+    (,(rx symbol-start (or "accept" "drop" "continue" "return") symbol-end)
      . font-lock-function-name-face)
-    (,(rx bow (group (or "jump" "goto"))
+    (,(rx symbol-start (group (or "jump" "goto"))
           " "
           (group (one-or-more (any alnum ?_)))) ; chain_expr
      (1 font-lock-function-name-face)
      (2 font-lock-variable-name-face))))
 
-;;; Based on equivalent for other editors:
-;;;   * /usr/share/nano/nftables.nanorc
-;;;   * https://github.com/nfnty/vim-nftables
+;; Based on equivalent for other editors:
+;;   * /usr/share/nano/nftables.nanorc
+;;   * https://github.com/nfnty/vim-nftables
 ;;;###autoload
 (define-derived-mode nftables-mode prog-mode "nft"
   "Major mode to edit nftables files."
@@ -304,10 +314,19 @@
   ;; ;; make "table my_table {" result in indents on the next line.
   ;; (setq-local electric-indent-chars ?\})
   (setq-local indent-line-function #'nftables-indent-line)
-  (setq-local tab-width 4))
+  ;; Let's not override `tab-width' since I can't see any place where the
+  ;; language documents it as having any particular size.
+  ;;(setq-local tab-width 4)
+  )
 
-;;; Stolen from parsnip's (bradyt's) dart-mode.
-;;; https://github.com/bradyt/dart-mode/blob/199709f7/dart-mode.el#L315
+(defvar nftables-indent-basic nil
+  "Basic indentation step size.
+If nil, use `smie-indent-basic'."
+  ;; :type '(choice (const nil) integer)
+  )
+
+;; Stolen from parsnip's (bradyt's) dart-mode.
+;; https://github.com/bradyt/dart-mode/blob/199709f7/dart-mode.el#L315
 (defun nftables-indent-line ()
   (let (old-point)
     (save-excursion
@@ -315,7 +334,7 @@
       (let ((depth (car (syntax-ppss))))
         (when (= ?\) (char-syntax (char-after)))
           (setq depth (1- depth)))
-        (indent-line-to (* depth tab-width)))
+        (indent-line-to (* depth (or nftables-indent-basic smie-indent-basic))))
       (setq old-point (point)))
     (when (< (point) old-point)
       (back-to-indentation))))
@@ -328,5 +347,4 @@
 (add-to-list 'interpreter-mode-alist '("nft\\(?:ables\\)?" . nftables-mode))
 
 (provide 'nftables-mode)
-
-;;; nftables-mode.el enads here.
+;;; nftables-mode.el ends here.

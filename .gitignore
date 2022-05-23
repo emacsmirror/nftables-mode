@@ -1,0 +1,3 @@
+*.elc
+/nftables-mode-autoloads.el
+/nftables-mode-pkg.el
